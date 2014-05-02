@@ -166,7 +166,7 @@ class MainWindow < Gtk::Window
           instance_methods = klass.instance_methods(true)
             .sort
             .map { |sym| klass.instance_method(sym) }
-            .reject { |m| STOP_CLASSES.include? m.owner.include  }
+            .reject { |m| STOP_CLASSES.include? m.owner  }
           class_methods = klass.singleton_methods(true)
             .sort
             .map { |sym| klass.method(sym) }
