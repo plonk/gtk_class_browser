@@ -29,7 +29,7 @@ class ObjectList < Gtk::ScrolledWindow
       col.resizable = true
       col.clickable = true
       col.sort_indicator = false
-      col.signal_connect('clicked') do 
+      col.signal_connect('clicked') do
         @treeview.columns.each {|c| if c!=col then c.sort_indicator = false end }
         if !col.sort_indicator? or col.sort_order == SORT_DESCENDING
           col.sort_indicator = true
@@ -111,21 +111,30 @@ class MainWindow < Gtk::Window
           hpaned.pack1 class_list, false, false
         end
 
-        create(VPaned) do |vpaned|
-          @method_list = create(ObjectList,
-                                ['Method', 'Arity', 'Owner'],
-                                [:name,
-                                 ->(m){arity_human(m.arity)},
-                                 ->(m){m.owner.to_s}]) do |method_list|
+        create(Notebook) do |notebook|
+          notebook.scrollable = true
 
-            vpaned.pack1 method_list, true, true # expand and shrink
+          @instance_method_list = create(ObjectList,
+                                         ['Name', 'Arity', 'Owner'],
+                                         [:name,
+                                          ->(m){arity_human(m.arity)},
+                                          ->(m){m.owner.to_s}]) do |instance_method_list|
+            notebook.append_page instance_method_list, Label.new('Instance Methods')
           end
 
-          @signal_list = create(ObjectList, ['Signal']) do |signal_list|
-            vpaned.add2 signal_list
+          @class_method_list = create(ObjectList,
+                                      ['Name', 'Arity', 'Owner'],
+                                      [:name,
+                                       ->(m){arity_human(m.arity)},
+                                       ->(m){m.owner.to_s}]) do |class_method_list|
+            notebook.append_page class_method_list, Label.new('Class Methods')
           end
 
-          hpaned.add2 vpaned
+          @signal_list = create(ObjectList, ['Name']) do |signal_list|
+            notebook.append_page signal_list, Label.new('Signals')
+          end
+
+          hpaned.add2 notebook
         end
 
         hpaned.position = 200
@@ -136,11 +145,13 @@ class MainWindow < Gtk::Window
     end
 
     @class_list.add_observer(self, :update)
-    @method_list.add_observer(self, :update)
+    @instance_method_list.add_observer(self, :update)
     @signal_list.add_observer(self, :update)
   end
 
-  def update event, subject 
+  STOP_CLASSES = [Kernel, Object, BasicObject]
+
+  def update event, subject
     case event
     when :cursor_changed
       case subject
@@ -152,18 +163,21 @@ class MainWindow < Gtk::Window
           instance_methods = klass.instance_methods(true)
             .sort
             .map { |sym| klass.instance_method(sym) }
-          class_methods = klass.methods(true)
+            .reject { |m| STOP_CLASSES.include? m.owner.include  }
+          class_methods = klass.singleton_methods(true)
             .sort
             .map { |sym| klass.method(sym) }
-          @method_list.set (instance_methods + class_methods)
+          @instance_method_list.set instance_methods
+          @class_method_list.set class_methods
           info += "\n#{instance_methods.size} methods"
+          info += ", #{class_methods.size} methods"
           signals = klass.respond_to?(:signals) ? klass.signals : []
           @signal_list.set signals.sort
 
           info += ", #{signals.size} signals"
           @info_label.text = info
         else
-          @method_list.set []
+          @instance_method_list.set []
           @signal_list.set []
         end
       end
@@ -172,19 +186,27 @@ class MainWindow < Gtk::Window
       when @class_list
         uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
           URI.encode_www_form([@class_list.selected.name])
-        system "xdg-open", uri
-      when @method_list
-        unbound_method = @method_list.selected
+        open_in_web_browser uri
+      when @instance_method_list
+        unbound_method = @instance_method_list.selected
         uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
           URI.encode_www_form([unbound_method.owner.name])
-        system "xdg-open", uri + "\##{unbound_method.name}"
+        open_in_web_browser uri + "\##{unbound_method.name}"
       when @signal_list
         uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
           URI.encode_www_form([@class_list.selected.name])
-        system "xdg-open", uri + "\#Signals"
+        open_in_web_browser uri + "\#Signals"
       end
     end
     nil
+  end
+
+  def open_in_web_browser(url_string)
+    if RUBY_PLATFORM =~ /mingw/
+      system "start", url_string
+    else
+      system "xdg-open", url_string
+    end
   end
 
   def arity_human arity
