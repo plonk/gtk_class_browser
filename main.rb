@@ -196,6 +196,7 @@ class MainWindow < Gtk::Window
         @info_label.text = info
       else
         @instance_method_list.set []
+        @class_method_list.set []
         @signal_list.set []
       end
     end
