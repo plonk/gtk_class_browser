@@ -144,9 +144,12 @@ class MainWindow < Gtk::Window
       add vbox
     end
 
+
     @class_list.add_observer(self, :update)
     @instance_method_list.add_observer(self, :update)
     @signal_list.add_observer(self, :update)
+
+    signal_connect("delete-event") do Gtk.main_quit; true end
   end
 
   STOP_CLASSES = [Kernel, Object, BasicObject]
