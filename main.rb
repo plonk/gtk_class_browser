@@ -29,14 +29,14 @@ class MainWindow < Gtk::Window
   LIST_DEFINITIONS = {
     :instance_method => [ ['Name', 'Arity', 'Owner'],
                           [:name,
-                           ->(m){arity_human(m.arity)},
-                           -> (m) { m.owner.to_s }] ],
+                           proc {|m| arity_human(m.arity)},
+                           proc {|m| m.owner.to_s }] ],
     :class           => [ ['Class'],
                           [->(klass){klass.to_s.sub(/^Gtk::/,'')}] ],
     :class_method    => [ ['Name', 'Arity', 'Owner'],
                           [:name,
-                           ->(m){arity_human(m.arity)},
-                           ->(m){m.owner.to_s}] ]
+                           proc {|m| arity_human(m.arity)},
+                           proc {|m| m.owner.to_s}] ]
   }
 
   def do_layout
@@ -108,8 +108,8 @@ class MainWindow < Gtk::Window
           .map { |sym| klass.method(sym) }
         @instance_method_list.set instance_methods
         @class_method_list.set class_methods
-        info += "\n#{instance_methods.size} methods"
-        info += ", #{class_methods.size} methods"
+        info += "\n#{instance_methods.size} instance methods"
+        info += ", #{class_methods.size} class methods"
         signals = klass.respond_to?(:signals) ? klass.signals : []
         @signal_list.set signals.sort
 
