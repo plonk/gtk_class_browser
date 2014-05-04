@@ -5,6 +5,8 @@ require 'observer'
 require_relative 'gtk_helper'
 require_relative 'object_list'
 
+require_relative 'model'
+
 class MainWindow < Gtk::Window
   include Gtk
   include GtkHelper
@@ -15,15 +17,36 @@ class MainWindow < Gtk::Window
     set_size_request(640, 480)
     set_border_width(5)
 
+    @model = Model.new
+    @model.add_observer(self, :update)
+
     do_layout
 
-    @class_list.add_observer(self, :update)
-    @instance_method_list.add_observer(self, :update)
-    @signal_list.add_observer(self, :update)
-
-    load_classes
+    @class_list.treeview.signal_connect('cursor-changed') do
+      @model.selected_class = @class_list.selected
+    end
+    @class_list.treeview.signal_connect('row-activated') do
+      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
+        URI.encode_www_form([@class_list.selected.name])
+      open_in_web_browser uri
+    end
+    @class_method_list.treeview.signal_connect('row-activated') do
+    end
+    @instance_method_list.treeview.signal_connect('row-activated') do
+      unbound_method = @instance_method_list.selected
+      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
+        URI.encode_www_form([unbound_method.owner.name])
+      open_in_web_browser uri + "\##{unbound_method.name}"
+    end
+    @signal_list.treeview.signal_connect('row-activated') do
+      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
+        URI.encode_www_form([@class_list.selected.name])
+      open_in_web_browser uri + "\#Signals"
+    end
 
     signal_connect("delete-event") do Gtk.main_quit; true end
+
+    @model.notify
   end
 
   LIST_DEFINITIONS = {
@@ -45,23 +68,26 @@ class MainWindow < Gtk::Window
       vbox.pack_start @info_label, false
 
       create(HPaned) do |hpaned|
-        @class_list = create(ObjectList, *LIST_DEFINITIONS[:class]) do |class_list|
+        @class_list = \
+        create(ObjectList, @model, *LIST_DEFINITIONS[:class]) do |class_list|
           hpaned.pack1 class_list, false, false
         end
 
         create(Notebook) do |notebook|
           notebook.scrollable = true
 
-          @instance_method_list = create(ObjectList, *LIST_DEFINITIONS[:instance_method]) do |instance_method_list|
+          @instance_method_list = \
+          create(ObjectList, @model, *LIST_DEFINITIONS[:instance_method]) do |instance_method_list|
             notebook.append_page instance_method_list, Label.new('Instance Methods')
           end
 
-          @class_method_list = create(ObjectList,
-                                      *LIST_DEFINITIONS[:class_method]) do |class_method_list|
+          @class_method_list = \
+          create(ObjectList, @model, *LIST_DEFINITIONS[:class_method]) do |class_method_list|
             notebook.append_page class_method_list, Label.new('Class Methods')
           end
 
-          @signal_list = create(ObjectList, ['Name']) do |signal_list|
+          @signal_list = \
+          create(ObjectList, @model, ['Name']) do |signal_list|
             notebook.append_page signal_list, Label.new('Signals')
           end
 
@@ -76,71 +102,11 @@ class MainWindow < Gtk::Window
     end
   end
 
-  def load_classes
-    gtk_classes = Gtk.constants
-      .map{|c| eval("Gtk::#{c}")}
-      .sort_by(&:to_s)
-      .select{|c| c.class==Class}
-    @class_list.set gtk_classes
-  end
-
-  STOP_CLASSES = [Kernel, Object, BasicObject]
-
-  def update event, *args
-    if self.respond_to? event
-      self.send(event, *args)
-    end
-  end
-
-  def cursor_changed subject
-    case subject
-    when @class_list
-      if klass = @class_list.selected
-        info = klass.ancestors.take_while{|x| x != ::Object}.map(&:to_s).join(' < ')
-
-        # instance_methods = klass.instance_methods - Object.instance_methods
-        instance_methods = klass.instance_methods(true)
-          .sort
-          .map { |sym| klass.instance_method(sym) }
-          .reject { |m| STOP_CLASSES.include? m.owner  }
-        class_methods = klass.singleton_methods(true)
-          .sort
-          .map { |sym| klass.method(sym) }
-        @instance_method_list.set instance_methods
-        @class_method_list.set class_methods
-        info += "\n#{instance_methods.size} instance methods"
-        info += ", #{class_methods.size} class methods"
-        signals = klass.respond_to?(:signals) ? klass.signals : []
-        @signal_list.set signals.sort
-
-        info += ", #{signals.size} signals"
-        @info_label.text = info
-      else
-        @instance_method_list.set []
-        @class_method_list.set []
-        @signal_list.set []
-      end
-    end
-    nil
-  end
-
-  def item_activated subject
-    case subject
-    when @class_list
-      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
-        URI.encode_www_form([@class_list.selected.name])
-      open_in_web_browser uri
-    when @instance_method_list
-      unbound_method = @instance_method_list.selected
-      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
-        URI.encode_www_form([unbound_method.owner.name])
-      open_in_web_browser uri + "\##{unbound_method.name}"
-    when @signal_list
-      uri = "http://ruby-gnome2.sourceforge.jp/hiki.cgi?" +
-        URI.encode_www_form([@class_list.selected.name])
-      open_in_web_browser uri + "\#Signals"
-    end
-    nil
+  def update
+    @class_list.set @model.classes
+    @instance_method_list.set @model.instance_methods
+    @class_method_list.set @model.class_methods
+    @info_label.text = @model.info_text
   end
 
   def open_in_web_browser(url_string)
